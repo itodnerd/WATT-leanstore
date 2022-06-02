@@ -226,7 +226,7 @@ void BufferManager::cool_pages()
       jumpmuTry()
       {
          while (phase_1_condition(randomPartition()) && failed_attempts < 10) {
-            COUNTERS_BLOCK() { PPCounters::myCounters().phase_1_counter++; }
+            COUNTERS_BLOCK() { PPCounters::myCounters().phase_1_counter++; PPCounters::myCounters().total_touches++; }
             BMOptimisticGuard r_guard(r_buffer->header.latch);
             // -------------------------------------------------------------------------------------
             // Performance crticial: we should cross cool (unswizzle), otherwise write performance will drop
@@ -307,8 +307,7 @@ void BufferManager::cool_pages()
                   partition.cooling_bfs_counter++;
                }
                // -------------------------------------------------------------------------------------
-               COUNTERS_BLOCK() { PPCounters::myCounters().unswizzled_pages_counter++; }
-               // -------------------------------------------------------------------------------------
+               COUNTERS_BLOCK() { PPCounters::myCounters().unswizzled_pages_counter++; PPCounters::myCounters().total_unswizzled ++;}               // -------------------------------------------------------------------------------------
                if (!phase_1_condition(partition)) {
                   r_buffer = &randomBufferFrame();
                   break;
