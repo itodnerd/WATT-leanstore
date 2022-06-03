@@ -35,6 +35,7 @@ void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_e
    AsyncWriteBuffer async_write_buffer(ssd_fd, PAGE_SIZE, FLAGS_async_batch_size);
    // -------------------------------------------------------------------------------------
    // -------------------------------------------------------------------------------------
+   wait_for_start();
    while (bg_threads_keep_running) {
       /*
        * Phase 1: unswizzle pages (put in the cooling stage)
@@ -89,6 +90,19 @@ void BufferManager::pageProviderThread(u64 p_begin, u64 p_end)  // [p_begin, p_e
    }
    bg_threads_counter--;
    //   delete cr::Worker::tls_ptr;
+}
+void BufferManager::wait_for_start()
+{
+   PID pid =0;
+   u64 wait_till = getPartition(pid).max_partition_size /10;
+   cout <<"MaxPartSize" << max_partition_size <<endl;
+   while(bg_threads_keep_running){
+      Partition& part = getPartition(pid++);
+      if(part.partition_size > wait_till) {
+         break;
+      }
+   }
+   cout << "Start cooling" <<endl;
 }
 
 void BufferManager::third_phase(AsyncWriteBuffer& async_write_buffer,

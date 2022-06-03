@@ -156,6 +156,7 @@ class BufferManager
                     const s64 pages_to_iterate_partition,
                     FreedBfsBatch& freed_bfs_batch,
                     Time& phase_3_end);
+   void wait_for_start();
 };                                                    // namespace storage
 // -------------------------------------------------------------------------------------
 class BMC
