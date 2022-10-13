@@ -89,7 +89,8 @@ class LeanStore
                         leanstore::profiling::CPUTable& cpu_table,
                         leanstore::profiling::CRTable& cr_table,
                         u64 seconds,
-                        const u64 tx) const;
+                         const u64 tx,
+                         ofstream& console_csv) const;
    void prepareCSV(profiling::ProfilingTable* table, ofstream& csv, bool print_seconds = true) const;
 };
 

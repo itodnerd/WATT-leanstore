@@ -43,8 +43,8 @@ void BMTable::open()
    columns.emplace("cool_pct_should", [&](Column& col) {
       col << (std::max<s64>(0, ((FLAGS_cool_pct * 1.0 * bm.getPoolSize() / 100.0) - local_total_free) * 100.0 / bm.getPoolSize()));
    });
-   columns.emplace("evicted_mib",
-                   [&](Column& col) { col << (sum_reset(PPCounters::pp_counters, &PPCounters::evicted_pages) * EFFECTIVE_PAGE_SIZE / 1024.0 / 1024.0); });
+   columns.emplace("evicted_pages",
+                   [&](Column& col) { col << (sum_reset(PPCounters::pp_counters, &PPCounters::evicted_pages) ); });
    columns.emplace("rounds", [&](Column& col) { col << (sum_reset(PPCounters::pp_counters, &PPCounters::pp_thread_rounds)); });
    columns.emplace("touches", [&](Column& col) { col << (sum_reset(PPCounters::pp_counters, &PPCounters::touched_bfs_counter)); });
    columns.emplace("unswizzled", [&](Column& col) { col << (sum_reset(PPCounters::pp_counters, &PPCounters::unswizzled_pages_counter)); });
