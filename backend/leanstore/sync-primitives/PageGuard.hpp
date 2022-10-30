@@ -29,7 +29,7 @@ class HybridPageGuard
    // -------------------------------------------------------------------------------------
    // Constructors
    HybridPageGuard() : bf(nullptr), guard(nullptr) { jumpmu_registerDestructor(); }  // use with caution
-   HybridPageGuard(Guard& guard, BufferFrame* bf) : bf(bf), guard(std::move(guard)) {bf->header.tracker.trackRead(); jumpmu_registerDestructor();}
+   HybridPageGuard(Guard& guard, BufferFrame* bf) : bf(bf), guard(std::move(guard)) {jumpmu_registerDestructor();}
    // -------------------------------------------------------------------------------------
    HybridPageGuard(HybridPageGuard& other) = delete;   // Copy constructor
    HybridPageGuard(HybridPageGuard&& other) = delete;  // Move constructor
@@ -40,7 +40,6 @@ class HybridPageGuard
    {
       assert(BMC::global_bf != nullptr);
       bf->page.dt_id = dt_id;
-      bf->header.tracker.trackRead();
       jumpmu_registerDestructor();
    }
    // -------------------------------------------------------------------------------------
@@ -49,7 +48,6 @@ class HybridPageGuard
    {
       guard.toOptimisticSpin();
       syncGSN();
-      bf->header.tracker.trackRead();
       jumpmu_registerDestructor();
    }
    // -------------------------------------------------------------------------------------
@@ -66,7 +64,6 @@ class HybridPageGuard
          guard.toOptimisticOrShared();
       }
       syncGSN();
-      bf->header.tracker.trackRead();
       jumpmu_registerDestructor();
       // -------------------------------------------------------------------------------------
       DEBUG_BLOCK()
@@ -109,7 +106,6 @@ class HybridPageGuard
    {
       assert(bf != nullptr);
       bf->page.GSN++;
-      bf->header.tracker.trackWrite();
    }
    // WAL
    inline void syncGSN()

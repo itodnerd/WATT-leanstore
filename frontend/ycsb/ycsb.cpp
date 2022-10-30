@@ -147,6 +147,5 @@ int main(int argc, char** argv)
       crm.joinAll();
    }
    cout << "-------------------------------------------------------------------------------------" << endl;
-   cout << "counter: " << leanstore::storage::BufferFrame::globalTrackerTime.load() << endl;
    return 0;
 }

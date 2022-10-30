@@ -141,11 +141,7 @@ class BufferManager
    };
 
    void nonDirtyEvict(BufferFrame& bf, BMOptimisticGuard& guard, FreedBfsBatch& evictedOnes);
-   bool evictPages(std::pair<double, double> min,
-                   u64 partitionID,
-                   AsyncWriteBuffer& async_write_buffer,
-                   std::vector<Partition*>& partitions,
-                   u64& pages_evicted);
+   bool evictPages(u64 partitionID, AsyncWriteBuffer& async_write_buffer, std::vector<Partition*>& partitions);
    bool childrenEvicted(BMOptimisticGuard& r_guard, BufferFrame& r_buffer);
    void checkGoodBufferFrames(Partition& partition, std::pair<double, double> threshold, WATT_TIME curr_time);
    BufferFrame* getNextBufferFrame(Partition& partition);

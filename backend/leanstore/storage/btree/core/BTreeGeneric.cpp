@@ -77,7 +77,6 @@ void BTreeGeneric::trySplit(BufferFrame& to_split, s16 favored_split_pos)
          c_x_guard->getSep(sep_key, sep_info);
          // -------------------------------------------------------------------------------------
          c_x_guard->split(c_x_guard, new_root, new_left_node, sep_info.slot, sep_key, sep_info.length);
-         new_root.bf()->header.tracker = c_x_guard.bf()->header.tracker;
       };
       if (FLAGS_wal) {
          auto new_root_init_wal = new_root.reserveWALEntry<WALInitPage>(0);

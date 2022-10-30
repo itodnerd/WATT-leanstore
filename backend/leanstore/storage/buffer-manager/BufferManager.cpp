@@ -38,7 +38,6 @@ BufferManager::BufferManager(s32 ssd_fd) : ssd_fd(ssd_fd),
       partitions_count(1<<FLAGS_partition_bits), partitions_mask(partitions_count -1),
       max_partition_size(std::ceil(((100 - FLAGS_free_pct) * 1.0 * dram_pool_size / 100.0) / static_cast<double>(partitions_count)))
 {
-   BufferFrame::Header::watt_backlog.checkSizes(FLAGS_watt_log_size, true);
    // -------------------------------------------------------------------------------------
    // Init DRAM pool
    {
@@ -189,7 +188,6 @@ BufferFrame& BufferManager::allocatePage()
    free_bf.header.pid = free_pid;
    free_bf.header.state = BufferFrame::STATE::HOT;
    free_bf.header.lastWrittenGSN = free_bf.page.GSN = 0;
-   free_bf.header.tracker.clear();
    // -------------------------------------------------------------------------------------
    if (free_pid == dram_pool_size) {
       cout << "-------------------------------------------------------------------------------------" << endl;
@@ -275,8 +273,6 @@ BufferFrame& BufferManager::resolveSwip(Guard& swip_guard, Swip<BufferFrame>& sw
       bf.header.lastWrittenGSN = bf.page.GSN;
       bf.header.state = BufferFrame::STATE::LOADED;
       bf.header.pid = pid;
-      bf.header.tracker = BufferFrame::Header::Tracker();
-      bf.header.watt_backlog.load(pid, bf.header.tracker);
       // -------------------------------------------------------------------------------------
       jumpmuTry()
       {

@@ -170,7 +170,6 @@ bool BTreeNode::merge(ExclusivePageGuard<BTreeNode>& self, u16 slotId, Exclusive
       tmp.upper = right->upper;
    }
    right->copyKeyValueRange(&tmp, tmp.count, 0, right->count);
-   right.bf()->header.tracker.merge(self.bf()->header.tracker);
    parent->removeSlot(slotId);
    memcpy(reinterpret_cast<u8*>(right.ptr()), &tmp, sizeof(BTreeNode));
    right->makeHint();
@@ -374,7 +373,6 @@ void BTreeNode::split(ExclusivePageGuard<BTreeNode>& self, ExclusivePageGuard<BT
    nodeRight->makeHint();
    // -------------------------------------------------------------------------------------
    memcpy(reinterpret_cast<char*>(this), nodeRight, sizeof(BTreeNode));
-   nodeLeft.bf()->header.tracker = self.bf()->header.tracker;
 }
 // -------------------------------------------------------------------------------------
 bool BTreeNode::removeSlot(u16 slotId)
