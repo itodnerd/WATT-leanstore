@@ -20,11 +20,11 @@ DEFINE_uint32(print_debug_interval_s, 1, "");
 DEFINE_bool(profiling, false, "");
 DEFINE_bool(profile_latency, false, "");
 DEFINE_bool(crc_check, false, "");
-DEFINE_bool(count_hits, false, "If you want to record total hits into the results_file, use this. WARNING: this costs arount 10 \% tx/sec!");
+DEFINE_bool(count_hits, false, "If you want to record total hits into the results_file, use this. WARNING: this costs around 10 \% tx/sec!");
 DEFINE_bool(count_jumps, false, "If you want to record total jumps into the results_file, use this. WARNING: this can cost some tx/sec!");
 // -------------------------------------------------------------------------------------
 DEFINE_uint32(worker_threads, 4, "Number of threads for benchmarking");
-DEFINE_uint32(creator_threads, 0, "Number of threads for dataset creation (prior to benchmarking)");
+DEFINE_uint32(creator_threads, 0, "Number of threads for dataset creation (prior to benchmarking); Default: Same as worker_threads");
 DEFINE_bool(cpu_counters, true, "Disable if HW does not have enough counters for all threads");
 DEFINE_bool(pin_threads, false, "Responsibility of the driver");
 DEFINE_bool(smt, true, "Simultaneous multithreading");
