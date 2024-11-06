@@ -41,7 +41,7 @@ BufferFrame& BufferManager::PageProviderThread::randomBufferFrame()
 // -------------------------------------------------------------------------------------
 void BufferManager::PageProviderThread::set_thread_config(){
    if (FLAGS_pin_threads) {
-      utils::pinThisThread(FLAGS_worker_threads + FLAGS_wal + id);
+      utils::pinThisThread(std::max(FLAGS_worker_threads, FLAGS_creator_threads) + FLAGS_wal + id);
    } else {
       utils::pinThisThread(FLAGS_wal + id);
    }

@@ -56,7 +56,7 @@ struct FreedBfsBatch {
    // -------------------------------------------------------------------------------------
    void add(BufferFrame& bf)
    {
-      if (freed_bfs_counter >= std::min<u64>(FLAGS_worker_threads, 128) && free_list != nullptr) {
+      if (freed_bfs_counter >= std::min<u64>(std::max(FLAGS_worker_threads, FLAGS_creator_threads), 128) && free_list != nullptr) {
          push();
       }
       bf.header.next_free_bf = freed_bfs_batch_head;

@@ -20,8 +20,6 @@ DEFINE_uint32(ycsb_read_ratio, 100, "");
 DEFINE_uint64(ycsb_tuple_count, 0, "");
 DEFINE_uint32(ycsb_payload_size, 100, "tuple size in bytes");
 DEFINE_uint32(ycsb_warmup_rounds, 0, "");
-DEFINE_uint32(ycsb_insert_threads, 0, "");
-DEFINE_uint32(ycsb_threads, 0, "");
 DEFINE_bool(ycsb_deterministic, false, "");
 DEFINE_uint32(ycsb_ops_per_tx, 1, "");
 // -------------------------------------------------------------------------------------
@@ -50,7 +48,6 @@ int main(int argc, char** argv)
    LeanStoreAdapter<KVTable> table;
    crm.scheduleJobSync(0, [&]() { table = LeanStoreAdapter<KVTable>(db, "YCSB"); });
    db.registerConfigEntry("ycsb_read_ratio", FLAGS_ycsb_read_ratio);
-   db.registerConfigEntry("ycsb_threads", FLAGS_ycsb_threads);
    db.registerConfigEntry("ycsb_deterministic", FLAGS_ycsb_deterministic);
    db.registerConfigEntry("ycsb_ops_per_tx", FLAGS_ycsb_ops_per_tx);
    // -------------------------------------------------------------------------------------
@@ -90,7 +87,7 @@ int main(int argc, char** argv)
    if (!FLAGS_recover) {
       cout << "Inserting " << ycsb_tuple_count << " values" << endl;
       begin = chrono::high_resolution_clock::now();
-      utils::Parallelize::range(FLAGS_ycsb_insert_threads ? FLAGS_ycsb_insert_threads : FLAGS_worker_threads, n, [&](u64 t_i, u64 begin, u64 end) {
+      utils::Parallelize::range(std::max(FLAGS_worker_threads, FLAGS_creator_threads), n, [&](u64 t_i, u64 begin, u64 end) {
          crm.scheduleJobAsync(t_i, [&, begin, end]() {
             for (u64 i = begin; i < end; i++) {
                YCSBPayload payload;
@@ -120,10 +117,9 @@ int main(int argc, char** argv)
    db.startProfilingThread();
    atomic<bool> keep_running = true;
    atomic<u64> running_threads_counter = 0;
-   const u32 exec_threads = FLAGS_ycsb_threads ? FLAGS_ycsb_threads : FLAGS_worker_threads;
    UpdateDescriptorGenerator1(tabular_update_descriptor, KVTable, my_payload);
    auto btree_vi = reinterpret_cast<leanstore::storage::btree::BTreeVI*>(table.btree);
-   for (u64 t_i = 0; t_i < exec_threads; t_i++) {
+   for (u64 t_i = 0; t_i < FLAGS_worker_threads; t_i++) {
       crm.scheduleJobAsync(t_i, [&]() {
          jumpmuTry()
          {

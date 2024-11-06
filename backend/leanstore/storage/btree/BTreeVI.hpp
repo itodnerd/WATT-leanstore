@@ -443,7 +443,7 @@ class BTreeVI : public BTreeLL
       return cr::Worker::my().cc.isVisibleForMe(worker_id, tx_ts, to_write);
    }
    static inline bool triggerPageWiseGarbageCollection(HybridPageGuard<BTreeNode>& guard) { return guard->has_garbage; }
-   u64 convertToFatTupleThreshold() { return FLAGS_worker_threads; }
+   u64 convertToFatTupleThreshold() { return std::max(FLAGS_worker_threads, FLAGS_creator_threads); }
    // -------------------------------------------------------------------------------------
    inline std::tuple<OP_RESULT, u16> reconstructTuple(Slice key, Slice payload, std::function<void(Slice value)> callback)
    {
