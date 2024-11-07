@@ -246,6 +246,7 @@ void LeanStore::print_tx_console(profiling::BMTable& bm_table,
       entries.emplace_back(std::forward_as_tuple("GCT Rounds",       cr_table.get("0", "gct_rounds"),                      10));
       entries.emplace_back(std::forward_as_tuple("touches",          bm_table.get("0", "touches"),                         10));
       entries.emplace_back(std::forward_as_tuple("evictions",        bm_table.get("0", "evicted_pages"),                   10));
+      entries.emplace_back(std::forward_as_tuple("epochs",           std::to_string(BufferFrame::Header::Tracker::globalTrackerTime.load()),10));
       std::vector<fancy_type> head_row = {}, table_row = {};
       for(auto& entry: entries){
          head_row.emplace_back(std::get<0>(entry));
