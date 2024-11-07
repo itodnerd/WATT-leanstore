@@ -264,10 +264,10 @@ void BufferManager::PageProviderThread::run()
       prefetch_bf(FLAGS_replacement_chunk_size);
       double threshold = findThresholds();
       evictPages(threshold);
-         while(pages_evicted >= evictions_per_epoch){
-            pages_evicted -= evictions_per_epoch;
-            leanstore::storage::BufferFrame::Header::Tracker::globalTrackerTime++;
-         }
+      if(pages_evicted >= evictions_per_epoch){
+         leanstore::storage::BufferFrame::Header::Tracker::globalTrackerTime++;
+         pages_evicted = 0;
+      }
       handleWritten();
       freed_bfs_batch.push();
       COUNTERS_BLOCK() { PPCounters::myCounters().pp_thread_rounds++; }
