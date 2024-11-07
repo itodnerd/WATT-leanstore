@@ -28,6 +28,7 @@ class AsyncWriteBuffer
    std::function<Partition&(PID)> getPartition;
    std::function<void(BufferFrame& write_command)> pageCallback;
    std::vector<std::pair<BufferFrame*, PID>> pagesToWrite;
+   std::vector<BufferFrame*> pagesWritten;
    std::unique_ptr<BufferFrame::Page[]> write_buffer;
    std::unique_ptr<WriteCommand[]> write_buffer_commands;
    std::unique_ptr<struct iocb[]> iocbs;
@@ -38,6 +39,7 @@ class AsyncWriteBuffer
       std::function<void(BufferFrame& write_command)> pageCallback);
    void flush();
    void add(BufferFrame& bf, PID pid);
+   void getWrittenPages(std::vector<BufferFrame*> other);
   private:
    void ensureNotFull();
    bool full();

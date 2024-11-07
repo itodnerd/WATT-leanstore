@@ -46,8 +46,8 @@ struct FreedBfsBatch {
    void push()
    {
       paranoid(free_list != nullptr);
-      if(freed_bfs_counter > 0){
-         free_list->batchPush(freed_bfs_batch_head, freed_bfs_batch_tail, freed_bfs_counter);
+      if(size() > 0){
+         free_list->batchPush(freed_bfs_batch_head, freed_bfs_batch_tail, size());
       }
       reset();
    }
@@ -56,7 +56,7 @@ struct FreedBfsBatch {
    // -------------------------------------------------------------------------------------
    void add(BufferFrame& bf)
    {
-      if (freed_bfs_counter >= std::min<u64>(std::max(FLAGS_worker_threads, FLAGS_creator_threads), 128) && free_list != nullptr) {
+      if (free_list != nullptr && size() >= std::min<u64>(FLAGS_worker_threads, 128)) {
          push();
       }
       bf.header.next_free_bf = freed_bfs_batch_head;
@@ -121,8 +121,8 @@ class BufferManager
       bool childInRam(BufferFrame* r_buffer, BMOptimisticGuard& r_guard, bool pickChild);
       ParentSwipHandler findParent(BufferFrame* r_buffer, BMOptimisticGuard& r_guard);
       bool checkXMerge(BufferFrame* r_buffer);
-      double findThresholds();
-      void evictPages(double threshold);
+      std::pair<double, double> findThresholds();
+      void evictPages(std::pair<double, double> threshold);
       void handleDirty(leanstore::storage::BMOptimisticGuard& o_guard,
                        leanstore::storage::BufferFrame* const volatile& cooled_bf,
                        const PID cooled_bf_pid);

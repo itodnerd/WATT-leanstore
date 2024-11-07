@@ -120,7 +120,7 @@ bool BufferManager::PageProviderThread::checkXMerge(BufferFrame* r_buffer){
       return space_check_res == SpaceCheckResult::RESTART_SAME_BF || space_check_res == SpaceCheckResult::PICK_ANOTHER_BF;
 }
 
-double BufferManager::PageProviderThread::findThresholds(){
+std::pair<double, double> BufferManager::PageProviderThread::findThresholds(){
    prefetch_bf(FLAGS_watt_samples*2);
    volatile double min = 50000, second_min = 50000;
    [[maybe_unused]] Time threshold_tests_begin, threshold_tests_end;
@@ -160,20 +160,20 @@ double BufferManager::PageProviderThread::findThresholds(){
       PPCounters::myCounters().threshold_tests_ms += (std::chrono::duration_cast<std::chrono::microseconds>(threshold_tests_end - threshold_tests_begin).count());
    }
    // double calculated_min = min;
-   double second_value = min*1.3;
    if(valid_tests>1){
-      //calculated_min = (min + second_min) / 2.0;
-      second_value = second_min;
+      return {(min + second_min) / 2.0, second_min};
    }
-   // last_min = calculated_min;
-   return second_value;
-   // return calculated_min;
+   return {min, min*1.3};
 }
 
-void BufferManager::PageProviderThread::evictPages(double min){
+void BufferManager::PageProviderThread::evictPages(std::pair<double, double> min){
    prefetch_bf(FLAGS_replacement_chunk_size);
    prefetched_bfs.insert(prefetched_bfs.end(), second_chance_bfs.begin(), second_chance_bfs.end());
    second_chance_bfs.clear();
+   async_write_buffer.getWrittenPages(prefetched_bfs);
+   for(auto* bf: prefetched_bfs){
+      __builtin_prefetch(bf);
+   }
    [[maybe_unused]] Time eviction_begin, eviction_end;
       COUNTERS_BLOCK() { eviction_begin = std::chrono::high_resolution_clock::now(); }
       while(prefetched_bfs.size() > 0){
@@ -194,7 +194,10 @@ void BufferManager::PageProviderThread::evictPages(double min){
             r_guard.recheck();
             double value = r_buffer->header.tracker.getValue();
             r_guard.recheck();
-            if (value > min){ // Page Value is high enough.
+            if (value > min.first){ // Page Value is high enough.
+               if(value < min.second){
+                  second_chance_bfs.push_back(r_buffer);
+               }
                jumpmu_continue;
             }
             if (r_buffer->header.is_being_written_back) {  //  || getPartitionID(bf.header.pid) != p_i
@@ -262,8 +265,7 @@ void BufferManager::PageProviderThread::run()
       freed_bfs_batch.set_free_list(&current_free_list);
       // for eviction
       prefetch_bf(FLAGS_replacement_chunk_size);
-      double threshold = findThresholds();
-      evictPages(threshold);
+      evictPages(findThresholds());
       if(pages_evicted >= evictions_per_epoch){
          leanstore::storage::BufferFrame::Header::Tracker::globalTrackerTime++;
          pages_evicted = 0;

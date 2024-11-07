@@ -131,6 +131,7 @@ void AsyncWriteBuffer::waitAndHandle(u64 submitted_pages)
             }
             bf.header.last_written_plsn = written_lsn;
             bf.header.is_being_written_back = false;
+            pagesWritten.push_back(&bf);
             PPCounters::myCounters().flushed_pages_counter++;
          }
       }
@@ -143,6 +144,11 @@ void AsyncWriteBuffer::waitAndHandle(u64 submitted_pages)
       pageCallback(bf);
    }
    COUNTERS_BLOCK() { PPCounters::myCounters().total_writes += submitted_pages; }
+}
+// -------------------------------------------------------------------------------------
+void AsyncWriteBuffer::getWrittenPages(std::vector<BufferFrame*> other){
+   other.insert(other.end(), pagesWritten.begin(), pagesWritten.end());
+   pagesWritten.clear();
 }
 // -------------------------------------------------------------------------------------
 // if async_write_buffer has pages: get & handle evicted.
