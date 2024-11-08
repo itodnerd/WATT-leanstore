@@ -1,7 +1,7 @@
+#include "AsyncWriteBuffer.hpp"
 #include "BufferFrame.hpp"
 #include "BufferManager.hpp"
 #include "Exceptions.hpp"
-#include "Tracing.hpp"
 #include "leanstore/Config.hpp"
 #include "leanstore/concurrency-recovery/CRMG.hpp"
 #include "leanstore/profiling/counters/CPUCounters.hpp"
@@ -24,11 +24,9 @@ namespace leanstore
 namespace storage
 {
 using Time = decltype(std::chrono::high_resolution_clock::now());
-
 BufferManager::PageProviderThread::PageProviderThread(u64 t_i, BufferManager* bf_mgr): id(t_i), bf_mgr(*bf_mgr), 
          async_write_buffer(bf_mgr->ssd_fd, PAGE_SIZE, FLAGS_write_buffer_size,
-            [&](PID pid) -> Partition& {return bf_mgr->getPartition(pid);},
-            [&]([[maybe_unused]] BufferFrame& bf){}),
+            [&](PID pid) -> Partition& {return bf_mgr->getPartition(pid);}),
          evictions_per_epoch(std::max((u64) 1, (u64) bf_mgr->dram_pool_size / FLAGS_epoch_size)){
          };
 // -------------------------------------------------------------------------------------
@@ -55,7 +53,7 @@ void BufferManager::PageProviderThread::set_thread_config(){
    leanstore::cr::CRManager::global->registerMeAsSpecialWorker();
 }
 // -------------------------------------------------------------------------------------
-bool BufferManager::PageProviderThread::childInRam(BufferFrame* r_buffer, BMOptimisticGuard& r_guard, bool pick_child){
+bool BufferManager::PageProviderThread::childInRam(BufferFrame* r_buffer, BMOptimisticGuard& r_guard){
       // Check if child in RAM; Add first hot child to cooling queue
       bool all_children_evicted = true;
       bool picked_a_child_instead = false;
@@ -63,14 +61,8 @@ bool BufferManager::PageProviderThread::childInRam(BufferFrame* r_buffer, BMOpti
       COUNTERS_BLOCK() { iterate_children_begin = std::chrono::high_resolution_clock::now(); }
       bf_mgr.getDTRegistry().iterateChildrenSwips(r_buffer->page.dt_id, *r_buffer, [&](Swip<BufferFrame>& swip) {
          all_children_evicted &= swip.isEVICTED();  // Ignore when it has a child in the cooling stage
-         if(!pick_child && !all_children_evicted){
-            return false;
-         }
          if (swip.isHOT()) {
-            BufferFrame* picked_child_bf = &swip.asBufferFrame();
-            r_guard.recheck();
-            picked_a_child_instead = true;
-            second_chance_bfs.push_back(picked_child_bf);
+            all_children_evicted = false;
             return false;
          }
          r_guard.recheck();
@@ -82,209 +74,193 @@ bool BufferManager::PageProviderThread::childInRam(BufferFrame* r_buffer, BMOpti
          PPCounters::myCounters().iterate_children_ms +=
              (std::chrono::duration_cast<std::chrono::microseconds>(iterate_children_end - iterate_children_begin).count());
       }
-      return !all_children_evicted || picked_a_child_instead;
+      return !all_children_evicted;
 }
 
-ParentSwipHandler BufferManager::PageProviderThread::findParent(BufferFrame* r_buffer, BMOptimisticGuard& r_guard){
-      [[maybe_unused]] Time find_parent_begin, find_parent_end;
-      COUNTERS_BLOCK() { find_parent_begin = std::chrono::high_resolution_clock::now(); }
-      DTID dt_id = r_buffer->page.dt_id;
-      r_guard.recheck();
-      // get Parent
-      ParentSwipHandler parent_handler = bf_mgr.getDTRegistry().findParent(dt_id, *r_buffer);
-      // -------------------------------------------------------------------------------------
-      paranoid(parent_handler.parent_guard.state == GUARD_STATE::OPTIMISTIC);
-      paranoid(parent_handler.parent_guard.latch != reinterpret_cast<HybridLatch*>(0x99));
-      COUNTERS_BLOCK()
-      {
-         find_parent_end = std::chrono::high_resolution_clock::now();
-         PPCounters::myCounters().find_parent_ms +=
-             (std::chrono::duration_cast<std::chrono::microseconds>(find_parent_end - find_parent_begin).count());
-      }
-      r_guard.recheck();
-      return parent_handler;
-}
-
-bool BufferManager::PageProviderThread::checkXMerge(BufferFrame* r_buffer){
-      const SpaceCheckResult space_check_res = bf_mgr.getDTRegistry().checkSpaceUtilization(r_buffer->page.dt_id, *r_buffer);
-      return space_check_res == SpaceCheckResult::RESTART_SAME_BF || space_check_res == SpaceCheckResult::PICK_ANOTHER_BF;
-}
-
-std::pair<double, double> BufferManager::PageProviderThread::findThresholds(){
-   volatile double min = 50000, second_min = 50000;
-   [[maybe_unused]] Time threshold_tests_begin, threshold_tests_end;
-   COUNTERS_BLOCK() { threshold_tests_begin = std::chrono::high_resolution_clock::now(); }
-   u32 valid_tests = 0;
-   while(valid_tests < FLAGS_watt_samples){
+// -------------------------------------------------------------------------------------
+std::pair<double, double> BufferManager::PageProviderThread::findThresholds()
+{
+   volatile double min = 500000;
+   volatile double next_min = 500000;
+   volatile int i=0;
+   while(i< FLAGS_watt_samples) {
       jumpmuTry()
       {
-         BufferFrame& r_buffer = randomBufferFrame();
-         COUNTERS_BLOCK() { PPCounters::myCounters().threshold_tests++; }
-         // -------------------------------------------------------------------------------------
-         BMOptimisticGuard r_guard(r_buffer.header.latch);
-         if(bf_mgr.pageIsNotEvictable(&r_buffer)){jumpmu_continue;}
-         r_guard.recheck();
-         if(childInRam(&r_buffer, r_guard, false)){jumpmu_continue;}
-         r_guard.recheck();
-         double value = r_buffer.header.tracker.getValue();
-         r_guard.recheck();
-         if(value < min){
-            second_min = min;
-            min = value;
-         }
-         else if (value < second_min){
-            second_min = value;
-         }
-         valid_tests++;
-      }
-      jumpmuCatch() {}
-   }
-   COUNTERS_BLOCK()
-   {
-      threshold_tests_end = std::chrono::high_resolution_clock::now();
-      PPCounters::myCounters().threshold_tests_ms += (std::chrono::duration_cast<std::chrono::microseconds>(threshold_tests_end - threshold_tests_begin).count());
-   }
-   // double calculated_min = min;
-   if(valid_tests>1){
-      return {(min + second_min) / 2.0, second_min};
-   }
-   return {min, min*1.3};
-}
+         while(i< FLAGS_watt_samples) {
+            BufferFrame& r_buffer = randomBufferFrame();
+            BMOptimisticGuard r_guard(r_buffer.header.latch);
 
-void BufferManager::PageProviderThread::evictPages(std::pair<double, double> min){
-   volatile u64 toEvict = freed_bfs_batch.free_list->free_bfs_limit - freed_bfs_batch.free_list->counter;
-   if(toEvict > 1000){
-      toEvict = 1000;
-   }
-   volatile u64 evictedPages = 0, fails=0;
+            if(bf_mgr.pageIsNotEvictable(&r_buffer)){continue;}
 
-   BufferFrame* frames[FLAGS_replacement_chunk_size];
-
-   [[maybe_unused]] Time eviction_begin, eviction_end;
-      COUNTERS_BLOCK() { eviction_begin = std::chrono::high_resolution_clock::now(); }
-      while(evictedPages < toEvict && fails < 50*toEvict){
-         async_write_buffer.getWrittenPages(second_chance_bfs);
-         for(u32 j=0; j<FLAGS_replacement_chunk_size; j++){
-            if(second_chance_bfs.size()>0){
-               frames[j] = second_chance_bfs.back();
-               second_chance_bfs.pop_back();
-            }else{
-               frames[j] =  &randomBufferFrame();
+            if(childInRam(&r_buffer, r_guard)){continue;}
+            i+=1;
+            double value = r_buffer.header.tracker.getValue();
+            if(value < min){
+               next_min = min;
+               min=value;
             }
-            __builtin_prefetch(frames[j]);
-         }
-         for(volatile u32 j=0; j<FLAGS_replacement_chunk_size; j++){
-            BufferFrame* r_buffer = frames[j];
-            u64 tmp = fails;
-            tmp++;
-            fails = tmp;
-            jumpmuTry()
-            {
-               COUNTERS_BLOCK() { PPCounters::myCounters().eviction_tests++; }
-               // -------------------------------------------------------------------------------------
-               BMOptimisticGuard r_guard(r_buffer->header.latch);
-               if(bf_mgr.pageIsNotEvictable(r_buffer)){jumpmu_continue;}
-               r_guard.recheck();
-               COUNTERS_BLOCK() { PPCounters::myCounters().touched_bfs_counter++; }
-               if(childInRam(r_buffer, r_guard, false)){jumpmu_continue;}
-               r_guard.recheck();
-               if(checkXMerge(r_buffer)){jumpmu_continue;}
-               r_guard.recheck();
-               double value = r_buffer->header.tracker.getValue();
-               r_guard.recheck();
-               if (value > min.first){ // Page Value is high enough.
-                  if(value < min.second){
-                     second_chance_bfs.push_back(r_buffer);
-                  }
-                  jumpmu_continue;
-               }
-               if (r_buffer->header.is_being_written_back) {
-                  jumpmu_continue;
-               }
-               const PID r_buffer_pid = r_buffer->header.pid;
-               // Prevent evicting a page that already has an IO Frame with (possibly) threads working on it.
-               {
-                  HashTable& io_table = bf_mgr.getIOTable(r_buffer_pid);
-                  JMUW<std::unique_lock<std::mutex>> io_guard(io_table.ht_mutex);
-                  if (io_table.lookup(r_buffer_pid)) {
-                     jumpmu_continue;
-                  }
-               }
-               if (r_buffer->isDirty()) {
-                  handleDirty(r_guard, r_buffer, r_buffer_pid);
-               } else {
-                  bf_mgr.evict_bf(freed_bfs_batch, *r_buffer, r_guard);
-                  u64 tmp = evictedPages;
-                  tmp++;
-                  evictedPages = tmp;
-                  tmp = fails;
-                  tmp--;
-                  fails = tmp;
-
-               }
-
+            else if (value < next_min){
+               next_min = value;
             }
-            jumpmuCatch() {}
          }
+         jumpmu_break;
       }
-      pages_evicted += evictedPages;
-      COUNTERS_BLOCK()
-      {
-         eviction_end = std::chrono::high_resolution_clock::now();
-         PPCounters::myCounters().eviction_ms += (std::chrono::duration_cast<std::chrono::microseconds>(eviction_end - eviction_begin).count());
-      }
+      jumpmuCatch(){};
+   }
+   double calculated_min = min;
+   double second_value = min*1.3;
+   if(i>1){
+      calculated_min = (min + next_min) / 2.0;
+      second_value = next_min;
+   }
+   return {calculated_min, second_value};
 }
-void BufferManager::PageProviderThread::handleDirty(leanstore::storage::BMOptimisticGuard& bf_o_guard,
-                                                    leanstore::storage::BufferFrame* const volatile& bf,
-                                                    const PID bf_pid)
+/***
+ * Main Idea: check random BufferFrame (prioritize from nextBufferFrames list), if
+ * NonEvictable: skip
+ * Evictable and Clean: directly Evict
+ * Evictable and Dirty: collect for group flush and add to nextBufferFrames list.
+ * @param min
+ * @param partitionID
+ * @param async_write_buffer
+ * @param nextBufferFrames
+ */
+void BufferManager::PageProviderThread::evictPages(std::pair<double, double> min)
 {
-   // Set is_beeing_written_back, update crc, get out_of_place pid, add to write_buffer
-   {
-      BMExclusiveGuard ex_guard(bf_o_guard);
-      paranoid(!bf->header.is_being_written_back);
-      bf->header.is_being_written_back.store(true, std::memory_order_release);
+   u64 evictions = freed_bfs_batch.free_list->free_bfs_limit - freed_bfs_batch.free_list->counter;
+   if(evictions > 1000){
+      evictions = 1000;
+   }
+   const u64 toEvict = evictions;
+   volatile u64 evictedPages = 0;
+   volatile u64 fails = 0;
 
-      if (FLAGS_crc_check) {
-         bf->header.crc = utils::CRC(bf->page.dt, EFFECTIVE_PAGE_SIZE);
+   WATT_TIME curr_time = BufferFrame::Header::Tracker::globalTrackerTime.load();
+   checkGoodBufferFrames(min, curr_time);
+   const u32 batch = 100;
+   BufferFrame* frames[batch];
+   while(evictedPages < toEvict && fails < 50*toEvict){
+      for (u32 j=0; j<batch; j++) {
+         frames[j] = getNextBufferFrame();
+         __builtin_prefetch(frames[j]);
+      }
+      for (u32 j=0; j<batch; j++) {
+         fails++;
+         jumpmuTry()
+         {
+            // Select and check random BufferFrame
+            BufferFrame& r_buffer = *frames[j];
+
+            BMOptimisticGuard r_guard(r_buffer.header.latch);
+
+            if(bf_mgr.pageIsNotEvictable(&r_buffer)){jumpmu_continue;}
+            // r_guard.recheck();
+            double value = r_buffer.header.tracker.getValue(curr_time);
+            if(value > min.first){
+               if(value < min.second)
+                  second_chance_bfs.push_back(&r_buffer);
+               jumpmu_continue;
+            }
+            // If has children: Evict children, too? (children freq usually < parent freq)
+            // Right now: abort if one child is not evicted
+            // Pick one or All Childs for eviction (Problem with Partitioning, thats why not direct evict)?
+            if(childInRam(&r_buffer, r_guard)){jumpmu_continue;}
+            // r_guard.recheck();
+
+            // If clean: Evict directly;
+            // Else: Add to async write buffer
+            if (!r_buffer.isDirty()) {
+               bf_mgr.evict_bf(freed_bfs_batch, r_buffer, r_guard);
+               evictedPages++;
+               if (freed_bfs_batch.size() > 100) {
+                  freed_bfs_batch.push();
+               }
+               fails--;
+               jumpmu_continue;
+            }
+            // If Async Write Buffer is full, flush
+            async_write_buffer.ensureNotFull();
+            {
+               BMExclusiveGuard ex_guard(r_guard);
+               r_buffer.header.is_being_written_back = true;
+            }
+            {
+               BMSharedGuard s_guard(r_guard);
+               PID wb_pid = r_buffer.header.pid;
+               if (FLAGS_out_of_place) {
+                  [[maybe_unused]] u64 p_i = bf_mgr.getPartitionID(r_buffer.header.pid);
+                  wb_pid = bf_mgr.getPartition(r_buffer.header.pid).nextPID();
+                  paranoid(bf_mgr.getPartitionID(r_buffer.header.pid) == p_i);
+                  paranoid(bf_mgr.getPartitionID(wb_pid) == p_i);
+               }
+               async_write_buffer.add(&r_buffer, wb_pid);
+            }
+         }
+         jumpmuCatch(){};
       }
    }
-   {
-      BMSharedGuard s_guard(bf_o_guard);
-      // TODO: preEviction callback according to DTID
-      PID wb_pid = bf_pid;
-      if (FLAGS_out_of_place) {
-         [[maybe_unused]] u64 p_i = bf_mgr.getPartitionID(bf_pid);
-         wb_pid = bf_mgr.getPartition(bf_pid).nextPID();
-         paranoid(bf_mgr.getPartitionID(bf->header.pid) == p_i);
-         paranoid(bf_mgr.getPartitionID(wb_pid) == p_i);
+   // Finally flush
+   async_write_buffer.flush();
+   if(freed_bfs_batch.size()){
+      freed_bfs_batch.push();
+   }
+   pages_evicted += evictedPages;
+   return;
+}
+void BufferManager::PageProviderThread::checkGoodBufferFrames(std::pair<double, double> threshold, WATT_TIME curr_time)
+{
+   if(second_chance_bfs.size() == 0){
+      return;
+   }
+   if(curr_time == last_good_check){
+      return;
+   }
+   last_good_check = curr_time;
+
+   std::vector<BufferFrame*> evictions, keep;
+   for(BufferFrame* good : second_chance_bfs){
+      double value = good->header.tracker.getValue(curr_time);
+      if (value < threshold.first){
+         evictions.emplace_back(good);
+      }else if(value < threshold.second){
+         keep.emplace_back(good);
       }
-      async_write_buffer.add(*bf, wb_pid);
+   }
+   second_chance_bfs.swap(keep);
+   for(BufferFrame* next: evictions){
+      nextup_bfs.emplace_back(next);
    }
 }
-void BufferManager::PageProviderThread::handleWritten(){
-   async_write_buffer.flush();
+BufferFrame* BufferManager::PageProviderThread::getNextBufferFrame()
+{
+   if(nextup_bfs.empty()) {
+      return &randomBufferFrame();
+   }
+   BufferFrame* next = nextup_bfs.back();
+   nextup_bfs.pop_back();
+   return next;
 }
 void BufferManager::PageProviderThread::run()
 {
    set_thread_config();
+
+   // Do Work
+   if(FLAGS_epoch_size < 1){
+      FLAGS_epoch_size = 1;
+   }
    while (bf_mgr.bg_threads_keep_running) {
       auto& current_free_list = bf_mgr.randomFreeList();
       if (current_free_list.counter >= current_free_list.free_bfs_limit) {
             continue;
       }
       freed_bfs_batch.set_free_list(&current_free_list);
-      // for eviction
-      evictPages(findThresholds()); // Use Sample Size variable
+      evictPages(findThresholds());
       while(pages_evicted >= evictions_per_epoch){
-         leanstore::storage::BufferFrame::Header::Tracker::globalTrackerTime++;
          pages_evicted -= evictions_per_epoch;
+         leanstore::storage::BufferFrame::Header::Tracker::globalTrackerTime++;
       }
-      handleWritten();
-      freed_bfs_batch.push();
-      COUNTERS_BLOCK() { PPCounters::myCounters().pp_thread_rounds++; }
    }
    bf_mgr.bg_threads_counter--;
-   //   delete cr::Worker::tls_ptr;
 }
 // -------------------------------------------------------------------------------------
 }  // namespace storage

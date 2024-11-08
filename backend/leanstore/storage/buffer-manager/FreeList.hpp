@@ -14,6 +14,7 @@ struct FreeList {
    u64 free_bfs_limit;
    atomic<BufferFrame*> head = {nullptr};
    std::atomic<u64> counter = {0};
+   std::atomic<bool> is_page_provided = {false};
    // -------------------------------------------------------------------------------------
    BufferFrame& tryPop();
    void batchPush(BufferFrame* head, BufferFrame* tail, u64 counter);

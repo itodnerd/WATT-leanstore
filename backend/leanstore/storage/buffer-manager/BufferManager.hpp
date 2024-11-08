@@ -113,11 +113,15 @@ class BufferManager
       AsyncWriteBuffer async_write_buffer;
       const u64 evictions_per_epoch;
       u64 pages_evicted = 0;
-      std::vector<BufferFrame*> second_chance_bfs;
+      std::vector<BufferFrame*> second_chance_bfs, nextup_bfs;
+      WATT_TIME last_good_check = 0;
       FreedBfsBatch freed_bfs_batch;
       void set_thread_config();
       BufferFrame& randomBufferFrame();
-      bool childInRam(BufferFrame* r_buffer, BMOptimisticGuard& r_guard, bool pickChild);
+      BufferFrame* getNextBufferFrame();
+      void nonDirtyEvict(BufferFrame& bf, BMOptimisticGuard& guard, FreedBfsBatch& evictedOnes);
+      void checkGoodBufferFrames(std::pair<double, double> threshold, WATT_TIME curr_time);
+      bool childInRam(BufferFrame* r_buffer, BMOptimisticGuard& r_guard);
       ParentSwipHandler findParent(BufferFrame* r_buffer, BMOptimisticGuard& r_guard);
       bool checkXMerge(BufferFrame* r_buffer);
       std::pair<double, double> findThresholds();
