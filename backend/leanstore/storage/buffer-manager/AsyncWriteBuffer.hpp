@@ -28,6 +28,7 @@ class AsyncWriteBuffer
    std::function<Partition&(PID)> getPartition;
    std::vector<std::pair<BufferFrame*, PID>> pagesToWrite;
    std::vector<BufferFrame*> pagesWritten;
+   std::vector<BufferFrame*>* nextup_bfs;
   public:
    std::unique_ptr<BufferFrame::Page[]> write_buffer;
    std::unique_ptr<WriteCommand[]> write_buffer_commands;
@@ -37,7 +38,7 @@ class AsyncWriteBuffer
    // -------------------------------------------------------------------------------------
    // Debug
    // -------------------------------------------------------------------------------------
-   AsyncWriteBuffer(int fd, u64 page_size, u64 batch_max_size, std::function<Partition&(PID)> getPartition);
+   AsyncWriteBuffer(int fd, u64 page_size, u64 batch_max_size, std::function<Partition&(PID)> getPartition, std::vector<BufferFrame*>* nextup_bfs);
    // Caller takes care of sync
    void ensureNotFull();
    void add(BufferFrame* bf, PID pid);

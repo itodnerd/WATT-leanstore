@@ -16,7 +16,8 @@ namespace leanstore
 namespace storage
 {
 // -------------------------------------------------------------------------------------
-AsyncWriteBuffer::AsyncWriteBuffer(int fd, u64 page_size, u64 batch_max_size, std::function<Partition&(PID)> getPartition) : fd(fd), page_size(page_size), batch_max_size(batch_max_size), getPartition(getPartition)
+AsyncWriteBuffer::AsyncWriteBuffer(int fd, u64 page_size, u64 batch_max_size, std::function<Partition&(PID)> getPartition,  std::vector<BufferFrame*>* nextup_bfs) :
+   fd(fd), page_size(page_size), batch_max_size(batch_max_size), getPartition(getPartition), nextup_bfs(nextup_bfs)
 {
    write_buffer = make_unique<BufferFrame::Page[]>(batch_max_size);
    write_buffer_commands = make_unique<WriteCommand[]>(batch_max_size);
@@ -124,7 +125,7 @@ void AsyncWriteBuffer::handleWritten()
          }
          jumpmuCatch() {}
       }
-      pagesWritten.push_back(write_buffer_commands[slot].bf);
+      nextup_bfs->push_back(write_buffer_commands[slot].bf);
    }
 }
 // if async_write_buffer has pages: get & handle evicted.
