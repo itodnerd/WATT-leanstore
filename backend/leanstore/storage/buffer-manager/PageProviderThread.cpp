@@ -198,7 +198,7 @@ void BufferManager::PageProviderThread::evictPages(std::pair<double, double> min
                   }
                   jumpmu_continue;
                }
-               if (r_buffer->header.is_being_written_back) {  //  || getPartitionID(bf.header.pid) != p_i
+               if (r_buffer->header.is_being_written_back) {
                   jumpmu_continue;
                }
                const PID r_buffer_pid = r_buffer->header.pid;
@@ -234,28 +234,32 @@ void BufferManager::PageProviderThread::evictPages(std::pair<double, double> min
          PPCounters::myCounters().eviction_ms += (std::chrono::duration_cast<std::chrono::microseconds>(eviction_end - eviction_begin).count());
       }
 }
-void BufferManager::PageProviderThread::handleDirty(leanstore::storage::BMOptimisticGuard& o_guard,
-                                                    leanstore::storage::BufferFrame* const volatile& cooled_bf,
-                                                    const PID cooled_bf_pid)
+void BufferManager::PageProviderThread::handleDirty(leanstore::storage::BMOptimisticGuard& bf_o_guard,
+                                                    leanstore::storage::BufferFrame* const volatile& bf,
+                                                    const PID bf_pid)
 {
    // Set is_beeing_written_back, update crc, get out_of_place pid, add to write_buffer
-   BMExclusiveGuard ex_guard(o_guard);
-   paranoid(!cooled_bf->header.is_being_written_back);
-   cooled_bf->header.is_being_written_back.store(true, std::memory_order_release);
+   {
+      BMExclusiveGuard ex_guard(bf_o_guard);
+      paranoid(!bf->header.is_being_written_back);
+      bf->header.is_being_written_back.store(true, std::memory_order_release);
 
-   if (FLAGS_crc_check) {
-      cooled_bf->header.crc = utils::CRC(cooled_bf->page.dt, EFFECTIVE_PAGE_SIZE);
+      if (FLAGS_crc_check) {
+         bf->header.crc = utils::CRC(bf->page.dt, EFFECTIVE_PAGE_SIZE);
+      }
    }
-
-   // TODO: preEviction callback according to DTID
-   PID wb_pid = cooled_bf_pid;
-   if (FLAGS_out_of_place) {
-      [[maybe_unused]] u64 p_i = bf_mgr.getPartitionID(cooled_bf_pid);
-      wb_pid = bf_mgr.getPartition(cooled_bf_pid).nextPID();
-      paranoid(bf_mgr.getPartitionID(cooled_bf->header.pid) == p_i);
-      paranoid(bf_mgr.getPartitionID(wb_pid) == p_i);
+   {
+      BMSharedGuard s_guard(bf_o_guard);
+      // TODO: preEviction callback according to DTID
+      PID wb_pid = bf_pid;
+      if (FLAGS_out_of_place) {
+         [[maybe_unused]] u64 p_i = bf_mgr.getPartitionID(bf_pid);
+         wb_pid = bf_mgr.getPartition(bf_pid).nextPID();
+         paranoid(bf_mgr.getPartitionID(bf->header.pid) == p_i);
+         paranoid(bf_mgr.getPartitionID(wb_pid) == p_i);
+      }
+      async_write_buffer.add(*bf, wb_pid);
    }
-   async_write_buffer.add(*cooled_bf, wb_pid);
 }
 void BufferManager::PageProviderThread::handleWritten(){
    async_write_buffer.flush();
