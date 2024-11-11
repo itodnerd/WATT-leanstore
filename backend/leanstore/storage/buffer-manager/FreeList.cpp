@@ -46,8 +46,7 @@ struct BufferFrame& FreeList::tryPop()
    counter--;
    new_pages++;
    paranoid(free_bf->header.state == BufferFrame::STATE::FREE);
-   if(new_pages >= new_pages_per_epoch){
-      new_pages = 0;
+   if(new_pages >= new_pages_per_epoch && new_pages.exchange(0) >= new_pages_per_epoch){
       leanstore::storage::BufferFrame::Header::Tracker::globalTrackerTime++;
    }
    return *free_bf;
