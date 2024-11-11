@@ -11,6 +11,7 @@ namespace storage
 {
 // -------------------------------------------------------------------------------------
 struct FreeList {
+   const u64 id;
    const u64 free_bfs_limit;
    const u64 new_pages_per_epoch;
    atomic<BufferFrame*> head = {nullptr};
@@ -21,7 +22,7 @@ struct FreeList {
    BufferFrame& tryPop();
    void batchPush(BufferFrame* head, BufferFrame* tail, u64 counter);
    void push(BufferFrame& bf);
-   FreeList(u64 free_bfs_limit, u64 dram_pool_size): free_bfs_limit(free_bfs_limit), new_pages_per_epoch(std::max((u64) 1, (u64) dram_pool_size / FLAGS_epoch_size)){}
+   FreeList(u64 id, u64 free_bfs_limit, u64 dram_pool_size): id(id), free_bfs_limit(free_bfs_limit), new_pages_per_epoch(std::max((u64) 1, (u64) dram_pool_size / FLAGS_epoch_size)){}
 };
 // -------------------------------------------------------------------------------------
 }  // namespace storage
