@@ -101,7 +101,7 @@ void AsyncWriteBuffer::handleWritten()
       // -------------------------------------------------------------------------------------
       assert(events[i].res == page_size);
       explainIfNot(events[i].res2 == 0);
-      auto written_lsn = write_buffer[slot].GSN;
+      auto written_lsn = write_buffer[slot].PLSN;
       BufferFrame& written_bf = *write_buffer_commands[slot].bf;
       PID out_of_place_pid = write_buffer_commands[slot].pid;
       while (true) {
