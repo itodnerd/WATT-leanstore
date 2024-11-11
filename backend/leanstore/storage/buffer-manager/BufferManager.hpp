@@ -111,7 +111,6 @@ class BufferManager
       const u64 id;
       BufferManager& bf_mgr;
       AsyncWriteBuffer async_write_buffer;
-      const u64 evictions_per_epoch;
       u64 pages_evicted = 0;
       std::vector<BufferFrame*> second_chance_bfs, nextup_bfs;
       WATT_TIME last_good_check = 0;

@@ -26,8 +26,7 @@ namespace storage
 using Time = decltype(std::chrono::high_resolution_clock::now());
 BufferManager::PageProviderThread::PageProviderThread(u64 t_i, BufferManager* bf_mgr): id(t_i), bf_mgr(*bf_mgr), 
          async_write_buffer(bf_mgr->ssd_fd, PAGE_SIZE, FLAGS_write_buffer_size,
-            [&](PID pid) -> Partition& {return bf_mgr->getPartition(pid);}, &nextup_bfs),
-         evictions_per_epoch(std::max((u64) 1, (u64) bf_mgr->dram_pool_size / FLAGS_epoch_size)){
+            [&](PID pid) -> Partition& {return bf_mgr->getPartition(pid);}, &nextup_bfs){
          };
 // -------------------------------------------------------------------------------------
 BufferFrame& BufferManager::PageProviderThread::randomBufferFrame()
@@ -255,10 +254,6 @@ void BufferManager::PageProviderThread::run()
       }
       freed_bfs_batch.set_free_list(&current_free_list);
       evictPages(findThresholds());
-      while(pages_evicted >= evictions_per_epoch){
-         pages_evicted -= evictions_per_epoch;
-         leanstore::storage::BufferFrame::Header::Tracker::globalTrackerTime++;
-      }
    }
    bf_mgr.bg_threads_counter--;
 }
