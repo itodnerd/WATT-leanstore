@@ -56,7 +56,7 @@ void AsyncWriteBuffer::add(BufferFrame* bf, PID pid)
    ensureNotFull();
    assert(!full());
    assert(u64(&bf->page) % 512 == 0);
-   COUNTERS_BLOCK() { WorkerCounters::myCounters().dt_page_writes[bf.page.dt_id]++; }
+   COUNTERS_BLOCK() { WorkerCounters::myCounters().dt_page_writes[bf->page.dt_id]++; }
    // -------------------------------------------------------------------------------------
    PARANOID_BLOCK()
    {
@@ -64,7 +64,7 @@ void AsyncWriteBuffer::add(BufferFrame* bf, PID pid)
          Tracing::mutex.lock();
          if (Tracing::ht.contains(pid)) {
             auto& entry = Tracing::ht[pid];
-            ensure(std::get<0>(entry) == bf.page.dt_id);
+            ensure(std::get<0>(entry) == bf->page.dt_id);
          }
          Tracing::mutex.unlock();
       }
@@ -105,7 +105,7 @@ void AsyncWriteBuffer::waitAndHandle()
       ensure(false);
    }
 
-   for (volatile u64 i = 0; i < submitted_pages; i++) {
+   for (atomic<u64> i = {0}; i < submitted_pages; i++) {
       const auto slot = (u64(events[i].data) - u64(write_buffer.get())) / page_size;
       // -------------------------------------------------------------------------------------
       ensure(events[i].res == page_size);
