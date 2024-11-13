@@ -77,6 +77,11 @@ bool BufferManager::PageProviderThread::childInRam(BufferFrame* r_buffer, BMOpti
 }
 
 // -------------------------------------------------------------------------------------
+bool BufferManager::PageProviderThread::checkXMerge(BufferFrame* r_buffer){
+      const SpaceCheckResult space_check_res = bf_mgr.getDTRegistry().checkSpaceUtilization(r_buffer->page.dt_id, *r_buffer);
+      return space_check_res == SpaceCheckResult::RESTART_SAME_BF || space_check_res == SpaceCheckResult::PICK_ANOTHER_BF;
+}
+// -------------------------------------------------------------------------------------
 std::pair<double, double> BufferManager::PageProviderThread::findThresholds()
 {
    volatile double min = 500000;
@@ -165,6 +170,7 @@ void BufferManager::PageProviderThread::evictPages(std::pair<double, double> min
             // Pick one or All Childs for eviction (Problem with Partitioning, thats why not direct evict)?
             if(childInRam(&r_buffer, r_guard)){jumpmu_continue;}
             // r_guard.recheck();
+            if(checkXMerge(&r_buffer)){jumpmu_continue;}
 
             // If clean: Evict directly;
             // Else: Add to async write buffer
