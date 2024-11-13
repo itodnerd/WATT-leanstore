@@ -46,8 +46,8 @@ struct FreedBfsBatch {
    void push()
    {
       paranoid(free_list != nullptr);
-      if(freed_bfs_counter > 0){
-         free_list->batchPush(freed_bfs_batch_head, freed_bfs_batch_tail, freed_bfs_counter);
+      if(size() > 0){
+         free_list->batchPush(freed_bfs_batch_head, freed_bfs_batch_tail, size());
       }
       reset();
    }
@@ -56,7 +56,7 @@ struct FreedBfsBatch {
    // -------------------------------------------------------------------------------------
    void add(BufferFrame& bf)
    {
-      if (freed_bfs_counter >= std::min<u64>(FLAGS_worker_threads, 128) && free_list != nullptr) {
+      if (free_list != nullptr && size() >= std::min<u64>(FLAGS_worker_threads, 128)) {
          push();
       }
       bf.header.next_free_bf = freed_bfs_batch_head;
@@ -111,30 +111,28 @@ class BufferManager
       const u64 id;
       BufferManager& bf_mgr;
       AsyncWriteBuffer async_write_buffer;
-      const u64 evictions_per_epoch;
-      u64 pages_evicted = 0;
-      std::vector<BufferFrame*> prefetched_bfs, second_chance_bfs;
+      std::vector<BufferFrame*> second_chance_bfs, nextup_bfs;
+      WATT_TIME last_good_check = 0;
       FreedBfsBatch freed_bfs_batch;
       void set_thread_config();
       BufferFrame& randomBufferFrame();
-      void prefetch_bf(u32 BATCH_SIZE);
-      bool childInRam(BufferFrame* r_buffer, BMOptimisticGuard& r_guard, bool pickChild);
-      ParentSwipHandler findParent(BufferFrame* r_buffer, BMOptimisticGuard& r_guard);
+      BufferFrame* getNextBufferFrame();
+      void nonDirtyEvict(BufferFrame& bf, BMOptimisticGuard& guard, FreedBfsBatch& evictedOnes);
+      void checkGoodBufferFrames(std::pair<double, double> threshold, WATT_TIME curr_time);
+      bool childInRam(BufferFrame* r_buffer, BMOptimisticGuard& r_guard);
       bool checkXMerge(BufferFrame* r_buffer);
-      double findThresholds();
-      void evictPages(double threshold);
+      std::pair<double, double> findThresholds();
+      void evictPages(std::pair<double, double> threshold);
       void handleDirty(leanstore::storage::BMOptimisticGuard& o_guard,
-                       leanstore::storage::BufferFrame* const volatile& cooled_bf,
-                       const PID cooled_bf_pid);
-      void handleWritten();
-
+                       leanstore::storage::BufferFrame& r_buffer,
+                       const PID bf_pid);
      public:
       PageProviderThread(u64 t_i, BufferManager* bf_mgr);
       void run();
    };
 
-   atomic<u64> bg_threads_counter = 0;
-   atomic<bool> bg_threads_keep_running = true;
+   atomic<u64> bg_threads_counter = {0};
+   atomic<bool> bg_threads_keep_running = {true};
    // -------------------------------------------------------------------------------------
    // Misc
    Partition& randomPartition();

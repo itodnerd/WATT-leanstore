@@ -18,7 +18,8 @@ namespace leanstore
 namespace storage
 {
 // -------------------------------------------------------------------------------------
-AsyncWriteBuffer::AsyncWriteBuffer(int fd, u64 page_size, u64 batch_max_size, std::function<Partition&(PID)> getPartition, std::function<void(BufferFrame& write_command)> pageCallback) : fd(fd), page_size(page_size), batch_max_size(batch_max_size), getPartition(getPartition), pageCallback(pageCallback)
+AsyncWriteBuffer::AsyncWriteBuffer(int fd, u64 page_size, u64 batch_max_size, std::function<Partition&(PID)> getPartition,  std::vector<BufferFrame*>* nextup_bfs) :
+   fd(fd), page_size(page_size), batch_max_size(batch_max_size), getPartition(getPartition), nextup_bfs(nextup_bfs)
 {
    write_buffer = make_unique<BufferFrame::Page[]>(batch_max_size);
    write_buffer_commands = make_unique<WriteCommand[]>(batch_max_size);
@@ -50,11 +51,11 @@ void AsyncWriteBuffer::ensureNotFull()
    }
 }
 // -------------------------------------------------------------------------------------
-void AsyncWriteBuffer::add(BufferFrame& bf, PID pid)
+void AsyncWriteBuffer::add(BufferFrame* bf, PID pid)
 {
    ensureNotFull();
    assert(!full());
-   assert(u64(&bf.page) % 512 == 0);
+   assert(u64(&bf->page) % 512 == 0);
    COUNTERS_BLOCK() { WorkerCounters::myCounters().dt_page_writes[bf.page.dt_id]++; }
    // -------------------------------------------------------------------------------------
    PARANOID_BLOCK()
@@ -69,14 +70,14 @@ void AsyncWriteBuffer::add(BufferFrame& bf, PID pid)
       }
    }
    // -------------------------------------------------------------------------------------
-   pagesToWrite.push_back({&bf, pid});
+   pagesToWrite.push_back({bf, pid});
    auto slot = pagesToWrite.size()-1;
    // Make copy of page, because we want to write the page in its current stage (and it is locked right now)
-   std::memcpy(&write_buffer[slot], bf.page, page_size);
+   std::memcpy(&write_buffer[slot], bf->page, page_size);
    write_buffer[slot].magic_debugging_number=pid;
 }
 // -------------------------------------------------------------------------------------
-u64 AsyncWriteBuffer::submit()
+void AsyncWriteBuffer::submit()
 {
    for(u64 slot = 0; slot < pagesToWrite.size(); slot++){
       write_buffer_commands[slot].bf = pagesToWrite[slot].first;
@@ -86,15 +87,13 @@ u64 AsyncWriteBuffer::submit()
       iocbs[slot].data = write_buffer_slot_ptr;
       iocbs_ptr[slot] = &iocbs[slot];
    }
-   u64 submitted_pages = pagesToWrite.size();
+   submitted_pages = pagesToWrite.size();
    pagesToWrite.clear();
-
    int ret_code = io_submit(aio_context, submitted_pages, iocbs_ptr.get());
    ensure(ret_code == s32(submitted_pages));
-   return submitted_pages;
 }
 // -------------------------------------------------------------------------------------
-void AsyncWriteBuffer::waitAndHandle(u64 submitted_pages)
+void AsyncWriteBuffer::waitAndHandle()
 {
    if (submitted_pages == 0){
       return;
@@ -106,7 +105,7 @@ void AsyncWriteBuffer::waitAndHandle(u64 submitted_pages)
       ensure(false);
    }
 
-   for (u64 i = 0; i < submitted_pages; i++) {
+   for (volatile u64 i = 0; i < submitted_pages; i++) {
       const auto slot = (u64(events[i].data) - u64(write_buffer.get())) / page_size;
       // -------------------------------------------------------------------------------------
       ensure(events[i].res == page_size);
@@ -132,6 +131,7 @@ void AsyncWriteBuffer::waitAndHandle(u64 submitted_pages)
             bf.header.last_written_plsn = written_lsn;
             bf.header.is_being_written_back = false;
             PPCounters::myCounters().flushed_pages_counter++;
+            nextup_bfs->push_back(write_buffer_commands[slot].bf);
          }
       }
       jumpmuCatch()
@@ -139,18 +139,14 @@ void AsyncWriteBuffer::waitAndHandle(u64 submitted_pages)
          bf.header.crc = 0;
          bf.header.is_being_written_back.store(false, std::memory_order_release);
       }
-      // -------------------------------------------------------------------------------------
-      pageCallback(bf);
    }
-   COUNTERS_BLOCK() { PPCounters::myCounters().total_writes += submitted_pages; }
 }
-// -------------------------------------------------------------------------------------
 // if async_write_buffer has pages: get & handle evicted.
 void AsyncWriteBuffer::flush()
 {
    if(!empty()) {
-      u64 submitted_pages = submit();
-      waitAndHandle(submitted_pages);
+      submit();
+      waitAndHandle();
    }
 }
 // -------------------------------------------------------------------------------------

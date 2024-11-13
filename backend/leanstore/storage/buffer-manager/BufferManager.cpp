@@ -51,8 +51,11 @@ BufferManager::BufferManager(s32 ssd_fd) : ssd_fd(ssd_fd),
       // -------------------------------------------------------------------------------------
       // Initialize partitions
       const u64 free_bfs_limit = std::ceil((FLAGS_free_pct * 1.0 * dram_pool_size / 100.0) / static_cast<double>(partitions_count));
+      if(FLAGS_epoch_size < 1){
+         FLAGS_epoch_size = 1;
+      }
       for (u64 p_i = 0; p_i < partitions_count; p_i++) {
-         partitions.push_back(std::make_unique<Partition>(p_i, partitions_count, free_bfs_limit));
+         partitions.push_back(std::make_unique<Partition>(p_i, partitions_count, free_bfs_limit, dram_pool_size));
       }
       // -------------------------------------------------------------------------------------
       utils::Parallelize::parallelRange(dram_total_size, [&](u64 begin, u64 end) { memset(reinterpret_cast<u8*>(bfs) + begin, 0, end - begin); });

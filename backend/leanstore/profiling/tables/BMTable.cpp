@@ -49,7 +49,7 @@ void BMTable::open()
    columns.emplace("submit_ms", [&](Column& col) { col << (sum_reset(PPCounters::pp_counters, &PPCounters::submit_ms) * 100.0 / total); });
    columns.emplace("async_mb_ws", [&](Column& col) { col << (sum_reset(PPCounters::pp_counters, &PPCounters::async_wb_ms)); });
    columns.emplace("w_mib", [&](Column& col) {
-      col << (sum_reset(PPCounters::pp_counters, &PPCounters::flushed_pages_counter) * EFFECTIVE_PAGE_SIZE / 1024.0 / 1024.0);
+      col << (sum_reset_add_to(PPCounters::pp_counters, &PPCounters::flushed_pages_counter, &PPCounters::total_writes) * EFFECTIVE_PAGE_SIZE / 1024.0 / 1024.0);
    });
    // -------------------------------------------------------------------------------------
    columns.emplace("allocate_ops", [&](Column& col) { col << (sum_reset_add_to(WorkerCounters::worker_counters, &WorkerCounters::allocate_operations_counter, &WorkerCounters::new_pages_counter)); });

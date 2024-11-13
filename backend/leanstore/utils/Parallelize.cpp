@@ -38,33 +38,5 @@ void Parallelize::parallelRange(u64 n, std::function<void(u64 begin, u64 end)> c
    }
 }
 // -------------------------------------------------------------------------------------
-void Parallelize::parallelRange(u64 a, u64 b, u64 n_threads, std::function<void(u64 i)> callback)
-{
-   std::vector<std::thread> threads;
-   // -------------------------------------------------------------------------------------
-   std::mutex m;
-   std::condition_variable cv;
-   u64 active_threads = 0;
-   // -------------------------------------------------------------------------------------
-   while (a <= b) {
-      std::unique_lock<std::mutex> lk(m);
-      cv.wait(lk, [&] { return active_threads < n_threads; });
-      active_threads++;
-      threads.emplace_back(
-          [&](u64 i) {
-             callback(i);
-             {
-                std::unique_lock<std::mutex> lk(m);
-                active_threads--;
-             }
-             cv.notify_all();
-          },
-          a++);
-   }
-   for (auto& thread : threads) {
-      thread.join();
-   }
-}
-// -------------------------------------------------------------------------------------
 }  // namespace utils
 }  // namespace leanstore

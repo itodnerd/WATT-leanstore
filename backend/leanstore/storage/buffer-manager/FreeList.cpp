@@ -32,17 +32,23 @@ void FreeList::push(BufferFrame& bf)
 struct BufferFrame& FreeList::tryPop()
 {
    BufferFrame *free_bf, *next;
+   u16 trys = 0;
    do {
       free_bf = head;
-      if (free_bf == nullptr) {
+      if (free_bf == nullptr && trys > 1000) {
          jumpmu::jump();
       }
+      trys ++;
       next = free_bf->header.next_free_bf;
-   } while (!head.compare_exchange_strong(free_bf, next));
+   } while (free_bf == nullptr || !head.compare_exchange_strong(free_bf, next));
 
    free_bf->header.next_free_bf = nullptr;
    counter--;
+   new_pages++;
    paranoid(free_bf->header.state == BufferFrame::STATE::FREE);
+   if(new_pages >= new_pages_per_epoch && new_pages.exchange(0) >= new_pages_per_epoch){
+      leanstore::storage::BufferFrame::Header::Tracker::globalTrackerTime++;
+   }
    return *free_bf;
 }
 // -------------------------------------------------------------------------------------
