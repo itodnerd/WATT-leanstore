@@ -2,6 +2,7 @@
 #include "BufferFrame.hpp"
 #include "Partition.hpp"
 #include "Units.hpp"
+#include "BMPlainGuard.hpp"
 // -------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------
 #include <libaio.h>
